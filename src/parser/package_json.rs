@@ -7,5 +7,5 @@ pub struct PackageJson {
     pub version: Option<String>,
     pub scripts: Option<HashMap<String, String>>,
     pub dependencies: Option<HashMap<String, String>>,
-    pub devDependencies: Option<HashMap<String, String>>,
+    pub dev_dependencies: Option<HashMap<String, String>>,
 }
