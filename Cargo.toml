@@ -1,8 +1,13 @@
 [package]
 name = "supplygaurd"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+swc_ecma_parser = "0.149"
+swc_ecma_ast = "0.118"
+swc_common = "0.36"
+regex = "1.10"
+lazy_static = "1.4"
