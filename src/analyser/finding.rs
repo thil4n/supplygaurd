@@ -3,6 +3,7 @@ pub enum Severity {
     Low,
     Medium,
     High,
+    Critical,
 }
 
 #[derive(Debug)]
