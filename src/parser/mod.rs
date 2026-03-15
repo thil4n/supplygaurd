@@ -23,7 +23,7 @@ pub fn parse_content(file_path: &str) -> Result<(), Box<dyn std::error::Error>> 
         return Err("package.json too large".into());
     }
 
-    let content = fs::read_to_string(file_path)?;
+    let content: String = fs::read_to_string(file_path)?;
     println!("Package.json read successfully\n");
 
     let pkg: PackageJson = serde_json::from_str(&content)?;
