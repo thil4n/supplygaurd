@@ -162,4 +162,107 @@ mod tests {
         assert_eq!(score.threat_count, 2);
         assert_eq!(score.severity, Severity::Medium);
     }
+
+    #[test]
+    fn test_empty_threats_zero_score() {
+        let score = RiskScore::calculate(&[]);
+        assert_eq!(score.total, 0);
+        assert_eq!(score.confidence, 0.0);
+        assert_eq!(score.threat_count, 0);
+        assert_eq!(score.severity, Severity::Low);
+        assert!(!score.is_suspicious());
+        assert!(!score.should_block());
+    }
+
+    #[test]
+    fn test_score_capped_at_100() {
+        // 20 × weight-20 = 400, should be capped at 100
+        let threats: Vec<ThreatIndicator> = (0..20)
+            .map(|_| ThreatIndicator::NetworkActivity(NetworkPattern {
+                pattern_type: "test".to_string(),
+                evidence: "https://evil.com".to_string(),
+                risk_weight: 20,
+            }))
+            .collect();
+        let score = RiskScore::calculate(&threats);
+        assert_eq!(score.total, 100);
+        assert_eq!(score.severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_should_block_when_critical() {
+        let threats: Vec<ThreatIndicator> = (0..6)
+            .map(|_| ThreatIndicator::NetworkActivity(NetworkPattern {
+                pattern_type: "test".to_string(),
+                evidence: "https://evil.com".to_string(),
+                risk_weight: 20,
+            }))
+            .collect();
+        let score = RiskScore::calculate(&threats);
+        assert_eq!(score.severity, Severity::Critical);
+        assert!(score.should_block());
+    }
+
+    #[test]
+    fn test_not_suspicious_below_threshold() {
+        let threats = vec![
+            ThreatIndicator::NetworkActivity(NetworkPattern {
+                pattern_type: "test".to_string(),
+                evidence: "fetch".to_string(),
+                risk_weight: 5,
+            }),
+        ];
+        let score = RiskScore::calculate(&threats);
+        assert!(!score.is_suspicious());
+        assert!(!score.should_block());
+    }
+
+    #[test]
+    fn test_confidence_increases_with_category_diversity() {
+        // Same number of threats, but diverse spreads across more categories
+        let single_cat = vec![
+            ThreatIndicator::NetworkActivity(NetworkPattern { pattern_type: "t".to_string(), evidence: "e".to_string(), risk_weight: 15 }),
+            ThreatIndicator::NetworkActivity(NetworkPattern { pattern_type: "t".to_string(), evidence: "e".to_string(), risk_weight: 15 }),
+        ];
+        let two_cats = vec![
+            ThreatIndicator::NetworkActivity(NetworkPattern { pattern_type: "t".to_string(), evidence: "e".to_string(), risk_weight: 15 }),
+            ThreatIndicator::DataExfiltration(ExfiltrationVector { target: "t".to_string(), evidence: "e".to_string(), risk_weight: 15 }),
+        ];
+        let single_score = RiskScore::calculate(&single_cat);
+        let diverse_score = RiskScore::calculate(&two_cats);
+        assert!(diverse_score.confidence > single_score.confidence);
+    }
+
+    #[test]
+    fn test_indicator_breakdown_counts() {
+        use crate::analyser::threat::{ExecutionContext, FSOperation, ObfuscationTechnique};
+
+        let threats = vec![
+            ThreatIndicator::NetworkActivity(NetworkPattern { pattern_type: "t".to_string(), evidence: "e".to_string(), risk_weight: 5 }),
+            ThreatIndicator::DataExfiltration(ExfiltrationVector { target: "t".to_string(), evidence: "e".to_string(), risk_weight: 5 }),
+            ThreatIndicator::ProcessExecution(ExecutionContext { method: "t".to_string(), evidence: "e".to_string(), risk_weight: 5 }),
+            ThreatIndicator::FileSystemTampering(FSOperation { operation: "t".to_string(), evidence: "e".to_string(), risk_weight: 5 }),
+            ThreatIndicator::Obfuscation(ObfuscationTechnique { technique: "t".to_string(), evidence: "e".to_string(), risk_weight: 5 }),
+        ];
+        let score = RiskScore::calculate(&threats);
+        let bd = &score.indicator_breakdown;
+        assert_eq!(bd.network_activity, 1);
+        assert_eq!(bd.data_exfiltration, 1);
+        assert_eq!(bd.process_execution, 1);
+        assert_eq!(bd.file_system_tampering, 1);
+        assert_eq!(bd.obfuscation, 1);
+        assert_eq!(score.threat_count, 5);
+    }
+
+    #[test]
+    fn test_boundary_severity_scores() {
+        assert_eq!(Severity::from_score(0),   Severity::Low);
+        assert_eq!(Severity::from_score(20),  Severity::Low);
+        assert_eq!(Severity::from_score(21),  Severity::Medium);
+        assert_eq!(Severity::from_score(50),  Severity::Medium);
+        assert_eq!(Severity::from_score(51),  Severity::High);
+        assert_eq!(Severity::from_score(75),  Severity::High);
+        assert_eq!(Severity::from_score(76),  Severity::Critical);
+        assert_eq!(Severity::from_score(100), Severity::Critical);
+    }
 }
