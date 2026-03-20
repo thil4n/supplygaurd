@@ -48,9 +48,9 @@ pub struct ObfuscationTechnique {
 lazy_static! {
     // Network activity patterns
     static ref NETWORK_PATTERNS: Vec<(Regex, &'static str, u8)> = vec![
-        (Regex::new(r"\brequire\s*\(\s*['"](https?|net|axios|node-fetch|got|request)['"]\s*\)").unwrap(), "HTTP client import", 15),
+        (Regex::new(r#"\brequire\s*\(\s*['"](https?|net|axios|node-fetch|got|request)['"]\s*\)"#).unwrap(), "HTTP client import", 15),
         (Regex::new(r"\bfetch\s*\(").unwrap(), "fetch() call", 15),
-        (Regex::new(r"https?://[^\s'""]+").unwrap(), "Hardcoded URL", 20),
+        (Regex::new(r#"https?://[^\s'""]+"#).unwrap(), "Hardcoded URL", 20),
         (Regex::new(r"\b(XMLHttpRequest|WebSocket)\b").unwrap(), "Network API usage", 15),
         (Regex::new(r"\bdns\.(lookup|resolve)").unwrap(), "DNS query", 10),
     ];
@@ -67,7 +67,7 @@ lazy_static! {
     // Process execution patterns
     static ref EXECUTION_PATTERNS: Vec<(Regex, &'static str, u8)> = vec![
         (Regex::new(r"\bchild_process\.(exec|execSync|spawn|fork)").unwrap(), "Child process execution", 20),
-        (Regex::new(r"\brequire\s*\(\s*['"]child_process['"]\s*\)").unwrap(), "Child process import", 15),
+        (Regex::new(r#"\brequire\s*\(\s*['"]child_process['"]\s*\)"#).unwrap(), "Child process import", 15),
         (Regex::new(r"\b(sh|bash|cmd|powershell|/bin/)").unwrap(), "Shell execution", 25),
         (Regex::new(r"\beval\s*\(").unwrap(), "eval() usage", 30),
         (Regex::new(r"\bFunction\s*\(").unwrap(), "Function constructor", 25),
@@ -89,7 +89,7 @@ lazy_static! {
         (Regex::new(r"\\x[0-9a-fA-F]{2}").unwrap(), "Hex encoding", 15),
         (Regex::new(r"\\u[0-9a-fA-F]{4}").unwrap(), "Unicode escape", 10),
         (Regex::new(r"\[(0x[0-9a-fA-F]+,?\s*){10,}\]").unwrap(), "Hex array obfuscation", 30),
-        (Regex::new(r"['\"]\s*\+\s*['\"]").unwrap(), "String concatenation obfuscation", 5),
+        (Regex::new(r#"['"]\s*\+\s*['"]"#).unwrap(), "String concatenation obfuscation", 5),
     ];
 }
 
