@@ -11,3 +11,5 @@ swc_ecma_ast = "0.118"
 swc_common = "0.36"
 regex = "1.10"
 lazy_static = "1.4"
+ureq = { version = "2", features = ["json"] }
+chrono = "0.4"
