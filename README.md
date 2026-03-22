@@ -59,7 +59,7 @@ A confidence score (0–1) reflects both the number and diversity of threat cate
 Requires [Rust](https://rustup.rs/) (edition 2021).
 
 ```bash
-git clone https://github.com/yourname/supplygaurd
+git clone https://github.com/thil4n/supplygaurd
 cd supplygaurd
 cargo build --release
 ```
