@@ -1,6 +1,7 @@
 use crate::analyser::threat::ThreatIndicator;
 use crate::analyser::AnalysisResult;
-use crate::registry::{RegistryFinding, RegistryRisk, RiskLevel};
+use crate::registry::{RegistryFinding, RiskLevel};
+use crate::scanner::{DependencyNode, ScanResult};
 
 // ── Verdict ───────────────────────────────────────────────────────────────────
 
@@ -27,40 +28,35 @@ impl Verdict {
 pub struct Report {
     pub file_path: String,
     pub analysis: AnalysisResult,
-    pub registry_risks: Vec<RegistryRisk>,
+    /// `None` when running in offline mode.
+    pub scan: Option<ScanResult>,
 }
 
 impl Report {
     pub fn new(
         file_path: impl Into<String>,
         analysis: AnalysisResult,
-        registry_risks: Vec<RegistryRisk>,
+        scan: Option<ScanResult>,
     ) -> Self {
         Self {
             file_path: file_path.into(),
             analysis,
-            registry_risks,
+            scan,
         }
     }
 
     pub fn verdict(&self) -> Verdict {
         let script_block = self.analysis.should_block();
-        let registry_high = self
-            .registry_risks
-            .iter()
-            .any(|r| r.risk_level == RiskLevel::High);
+        let scan_block = self.scan.as_ref().is_some_and(|s| s.has_block());
 
-        if script_block || registry_high {
+        if script_block || scan_block {
             return Verdict::Block;
         }
 
         let script_suspicious = self.analysis.is_suspicious();
-        let registry_warn = self
-            .registry_risks
-            .iter()
-            .any(|r| r.risk_level == RiskLevel::Warning);
+        let scan_suspicious = self.scan.as_ref().is_some_and(|s| s.has_suspicious());
 
-        if script_suspicious || registry_warn {
+        if script_suspicious || scan_suspicious {
             return Verdict::Suspicious;
         }
 
@@ -104,46 +100,22 @@ impl Report {
             }
         }
 
-        // ── Registry section ──────────────────────────────────────────────────
-        if !self.registry_risks.is_empty() {
-            println!("Registry Metadata Check");
+        // ── Dependency tree scan ──────────────────────────────────────────────
+        if let Some(ref scan) = self.scan {
+            println!("Dependency Tree Scan ({} scanned, {} skipped)",
+                scan.total_scanned, scan.total_skipped);
             println!("{}", "=".repeat(50));
 
-            let flagged: Vec<&RegistryRisk> = self
-                .registry_risks
-                .iter()
-                .filter(|r| r.risk_level != RiskLevel::Ok)
-                .collect();
-            let clean_count = self.registry_risks.len() - flagged.len();
-
-            for risk in &flagged {
-                println!("[{}] {}", risk.risk_level.as_str(), risk.package_name);
-                if let Some(ref ver) = risk.latest_version {
-                    println!("  Latest      : {}", ver);
-                }
-                if let Some(days) = risk.age_days {
-                    println!("  Age         : {} day(s)", days);
-                }
-                if let Some(dl) = risk.download_count {
-                    println!("  Downloads   : {} last month", fmt_number(dl));
-                }
-                if let Some(n) = risk.maintainer_count {
-                    println!("  Maintainers : {}", n);
-                }
-                if !risk.findings.is_empty() {
-                    println!("  Findings    :");
-                    for f in &risk.findings {
-                        println!("    • {}", describe_registry_finding(f));
-                    }
-                }
-                println!();
+            let mut flagged = 0usize;
+            for node in &scan.tree {
+                flagged += render_node(node, 0);
             }
 
-            if clean_count > 0 {
+            let clean = scan.total_scanned.saturating_sub(flagged);
+            if clean > 0 {
                 println!(
                     "  {} / {} dependencies clean",
-                    clean_count,
-                    self.registry_risks.len()
+                    clean, scan.total_scanned
                 );
             }
             println!();
@@ -153,6 +125,61 @@ impl Report {
         println!("{}", "=".repeat(50));
         println!("VERDICT: {}", self.verdict().message());
     }
+}
+
+/// Render a dependency node and its children. Returns count of flagged nodes.
+fn render_node(node: &DependencyNode, indent: usize) -> usize {
+    let is_flagged = node.registry_risk.risk_level != RiskLevel::Ok
+        || node.analysis.is_suspicious()
+        || node.analysis.should_block();
+
+    let mut count = 0;
+    let pad = "  ".repeat(indent + 1);
+
+    if is_flagged {
+        count += 1;
+
+        // Registry risk line
+        let risk_label = if node.analysis.should_block() {
+            "BLOCK"
+        } else if node.analysis.is_suspicious() {
+            node.registry_risk.risk_level.as_str()
+        } else {
+            node.registry_risk.risk_level.as_str()
+        };
+
+        println!(
+            "{}[{}] {} v{}",
+            pad, risk_label, node.name, node.version
+        );
+
+        // Registry findings
+        for f in &node.registry_risk.findings {
+            println!("{}  • {}", pad, describe_registry_finding(f));
+        }
+
+        // Script findings (if any install scripts had threats)
+        for script in &node.analysis.scripts {
+            if script.risk_score.total > 0 {
+                println!(
+                    "{}  {} script — score {}/100",
+                    pad, script.script_name, script.risk_score.total
+                );
+                for threat in &script.threats {
+                    let (cat, detail, evidence) = describe_threat(threat);
+                    println!("{}    [{:<13}] {:<30} — {}", pad, cat, detail, evidence);
+                }
+            }
+        }
+        println!();
+    }
+
+    // Recurse into children
+    for child in &node.children {
+        count += render_node(child, indent + 1);
+    }
+
+    count
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -219,7 +246,8 @@ fn fmt_number(n: u64) -> String {
 mod tests {
     use super::*;
     use crate::analyser::AnalysisResult;
-    use crate::registry::{RegistryFinding, RegistryRisk, RiskLevel};
+    use crate::registry::{RegistryRisk, RiskLevel};
+    use crate::scanner::{DependencyNode, ScanResult};
 
     fn clean_analysis() -> AnalysisResult {
         AnalysisResult {
@@ -229,67 +257,95 @@ mod tests {
         }
     }
 
-    fn risk(level: RiskLevel, findings: Vec<RegistryFinding>) -> RegistryRisk {
+    fn dummy_risk(level: RiskLevel) -> RegistryRisk {
         RegistryRisk {
             package_name: "dep".to_string(),
             latest_version: None,
             age_days: None,
             maintainer_count: None,
             download_count: None,
-            findings,
+            findings: vec![],
             risk_level: level,
         }
     }
 
+    fn scan_with(nodes: Vec<DependencyNode>) -> ScanResult {
+        let total = nodes.len();
+        ScanResult { tree: nodes, total_scanned: total, total_skipped: 0 }
+    }
+
+    fn dep_node(name: &str, level: RiskLevel) -> DependencyNode {
+        DependencyNode {
+            name: name.into(),
+            version: "1.0.0".into(),
+            depth: 0,
+            analysis: clean_analysis(),
+            registry_risk: dummy_risk(level),
+            children: vec![],
+        }
+    }
+
+    // ── Verdict tests (offline / no scan) ─────────────────────────────────────
+
     #[test]
-    fn test_verdict_pass_when_no_signals() {
-        let report = Report::new("p.json", clean_analysis(), vec![]);
+    fn test_verdict_pass_offline() {
+        let report = Report::new("p.json", clean_analysis(), None);
         assert_eq!(report.verdict(), Verdict::Pass);
     }
 
     #[test]
-    fn test_verdict_block_on_registry_high() {
+    fn test_verdict_pass_empty_scan() {
+        let report = Report::new("p.json", clean_analysis(), Some(scan_with(vec![])));
+        assert_eq!(report.verdict(), Verdict::Pass);
+    }
+
+    // ── Verdict tests (with scan) ─────────────────────────────────────────────
+
+    #[test]
+    fn test_verdict_block_on_high_risk_dep() {
         let report = Report::new(
             "p.json",
             clean_analysis(),
-            vec![risk(
-                RiskLevel::High,
-                vec![RegistryFinding::NewlyPublished { age_days: 1 }],
-            )],
+            Some(scan_with(vec![dep_node("bad", RiskLevel::High)])),
         );
         assert_eq!(report.verdict(), Verdict::Block);
     }
 
     #[test]
-    fn test_verdict_suspicious_on_registry_warning() {
+    fn test_verdict_suspicious_on_warning_dep() {
         let report = Report::new(
             "p.json",
             clean_analysis(),
-            vec![risk(RiskLevel::Warning, vec![RegistryFinding::SingleMaintainer])],
+            Some(scan_with(vec![dep_node("warn", RiskLevel::Warning)])),
         );
         assert_eq!(report.verdict(), Verdict::Suspicious);
     }
 
     #[test]
-    fn test_verdict_block_beats_suspicious() {
-        // High-risk dep + a warn dep → still Block
+    fn test_verdict_block_on_nested_high() {
+        let child = dep_node("deep-bad", RiskLevel::High);
+        let parent = DependencyNode {
+            children: vec![child],
+            ..dep_node("parent", RiskLevel::Ok)
+        };
         let report = Report::new(
             "p.json",
             clean_analysis(),
-            vec![
-                risk(RiskLevel::Warning, vec![RegistryFinding::SingleMaintainer]),
-                risk(
-                    RiskLevel::High,
-                    vec![RegistryFinding::NewlyPublished { age_days: 0 }],
-                ),
-            ],
+            Some(scan_with(vec![parent])),
         );
         assert_eq!(report.verdict(), Verdict::Block);
     }
 
     #[test]
-    fn test_verdict_pass_with_only_ok_registry() {
-        let report = Report::new("p.json", clean_analysis(), vec![risk(RiskLevel::Ok, vec![])]);
+    fn test_verdict_pass_all_clean() {
+        let report = Report::new(
+            "p.json",
+            clean_analysis(),
+            Some(scan_with(vec![
+                dep_node("a", RiskLevel::Ok),
+                dep_node("b", RiskLevel::Ok),
+            ])),
+        );
         assert_eq!(report.verdict(), Verdict::Pass);
     }
 

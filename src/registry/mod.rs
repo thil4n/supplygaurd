@@ -44,6 +44,16 @@ pub struct RegistryRisk {
     pub risk_level: RiskLevel,
 }
 
+/// Full metadata returned by `fetch_package_metadata()` for recursive scanning.
+#[derive(Debug)]
+pub struct PackageMetadata {
+    pub name: String,
+    pub version: String,
+    pub scripts: Option<HashMap<String, String>>,
+    pub dependencies: Option<HashMap<String, String>>,
+    pub registry_risk: RegistryRisk,
+}
+
 // ── Internal serde types ──────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -53,6 +63,13 @@ struct RegistryResponse {
     maintainers: Option<Vec<Maintainer>>,
     #[serde(rename = "dist-tags")]
     dist_tags: HashMap<String, String>,
+    versions: Option<HashMap<String, VersionInfo>>,
+}
+
+#[derive(Deserialize)]
+struct VersionInfo {
+    scripts: Option<HashMap<String, String>>,
+    dependencies: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -80,12 +97,45 @@ impl RegistryChecker {
         Self { agent }
     }
 
+    /// Fetch registry metadata and return risk assessment only (no scripts/deps).
     pub fn check(&self, package_name: &str) -> RegistryRisk {
+        let (risk, _meta) = self.fetch_raw(package_name);
+        risk
+    }
+
+    /// Fetch full package metadata: risk assessment + scripts + dependencies.
+    /// Used by the recursive scanner to analyse transitive dependencies.
+    pub fn fetch_package_metadata(&self, package_name: &str) -> PackageMetadata {
+        let (risk, meta) = self.fetch_raw(package_name);
+        let (scripts, dependencies) = meta
+            .map(|m| {
+                let latest = risk.latest_version.as_deref().unwrap_or("");
+                let ver_info = m.versions.as_ref().and_then(|vs| vs.get(latest));
+                (
+                    ver_info.and_then(|v| v.scripts.clone()),
+                    ver_info.and_then(|v| v.dependencies.clone()),
+                )
+            })
+            .unwrap_or((None, None));
+
+        PackageMetadata {
+            name: package_name.to_string(),
+            version: risk.latest_version.clone().unwrap_or_else(|| "unknown".into()),
+            scripts,
+            dependencies,
+            registry_risk: risk,
+        }
+    }
+
+    /// Shared fetch logic — returns the risk assessment and the raw response
+    /// (when available) so callers can extract additional fields.
+    fn fetch_raw(&self, package_name: &str) -> (RegistryRisk, Option<RegistryResponse>) {
         let mut findings = Vec::new();
         let mut latest_version = None;
         let mut age_days = None;
         let mut maintainer_count = None;
         let mut download_count = None;
+        let mut raw_meta = None;
 
         // Typosquat check — no network needed.
         for candidate in typosquat::find_similar(package_name) {
@@ -122,6 +172,8 @@ impl RegistryChecker {
                     if count == 1 {
                         findings.push(RegistryFinding::SingleMaintainer);
                     }
+
+                    raw_meta = Some(meta);
                 }
                 Err(e) => findings.push(RegistryFinding::FetchFailed { reason: e.to_string() }),
             },
@@ -143,7 +195,7 @@ impl RegistryChecker {
         }
 
         let risk_level = compute_risk_level(&findings);
-        RegistryRisk {
+        let risk = RegistryRisk {
             package_name: package_name.to_string(),
             latest_version,
             age_days,
@@ -151,7 +203,8 @@ impl RegistryChecker {
             download_count,
             findings,
             risk_level,
-        }
+        };
+        (risk, raw_meta)
     }
 }
 

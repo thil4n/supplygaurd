@@ -5,6 +5,7 @@ use crate::parser::PackageJson;
 use threat::{ThreatDetector, ThreatIndicator};
 use risk_score::RiskScore;
 
+#[derive(Debug)]
 pub struct ScriptAnalysis {
     pub script_name: String,
     pub script_content: String,
@@ -12,6 +13,7 @@ pub struct ScriptAnalysis {
     pub risk_score: RiskScore,
 }
 
+#[derive(Debug)]
 pub struct AnalysisResult {
     pub package_name: String,
     pub package_version: String,
