@@ -307,8 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn test_risk_level_single_maintainer_is_warning() {
-        let findings = vec![RegistryFinding::SingleMaintainer];
+    fn test_risk_level_low_trust_is_warning() {
+        let findings = vec![RegistryFinding::LowTrustPackage {
+            reason: "Single maintainer + low downloads".into(),
+        }];
         assert_eq!(compute_risk_level(&findings), RiskLevel::Warning);
     }
 
