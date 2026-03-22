@@ -10,7 +10,9 @@ use std::collections::HashMap;
 pub enum RegistryFinding {
     NewlyPublished { age_days: i64 },
     PossibleTyposquat { similar_to: String, distance: usize },
-    SingleMaintainer,
+    /// Only emitted when combined with another weak signal (low downloads, new package).
+    /// Single maintainer alone is normal for npm — most packages have one.
+    LowTrustPackage { reason: String },
     LowDownloads { count: u64 },
     FetchFailed { reason: String },
 }
@@ -169,9 +171,6 @@ impl RegistryChecker {
 
                     let count = meta.maintainers.as_ref().map(|m| m.len()).unwrap_or(0);
                     maintainer_count = Some(count);
-                    if count == 1 {
-                        findings.push(RegistryFinding::SingleMaintainer);
-                    }
 
                     raw_meta = Some(meta);
                 }
@@ -192,6 +191,24 @@ impl RegistryChecker {
                     findings.push(RegistryFinding::LowDownloads { count: dl.downloads });
                 }
             }
+        }
+
+        // ── Combined weak signals ─────────────────────────────────────────────
+        // Single maintainer alone is normal (most npm packages). Only flag it
+        // when paired with another weak signal that together suggest low trust.
+        let is_single_maintainer = maintainer_count == Some(1);
+        let is_low_downloads = download_count.map(|d| d < 1_000).unwrap_or(false);
+        let is_new = age_days.map(|d| d < 30).unwrap_or(false);
+
+        if is_single_maintainer && (is_low_downloads || is_new) {
+            let detail = if is_low_downloads && is_new {
+                "Single maintainer + low downloads + recently published".to_string()
+            } else if is_low_downloads {
+                "Single maintainer + low downloads".to_string()
+            } else {
+                "Single maintainer + recently published (< 30 days)".to_string()
+            };
+            findings.push(RegistryFinding::LowTrustPackage { reason: detail });
         }
 
         let risk_level = compute_risk_level(&findings);
@@ -233,7 +250,7 @@ fn compute_risk_level(findings: &[RegistryFinding]) -> RiskLevel {
     }
     if findings
         .iter()
-        .any(|f| matches!(f, RegistryFinding::SingleMaintainer | RegistryFinding::LowDownloads { .. }))
+        .any(|f| matches!(f, RegistryFinding::LowTrustPackage { .. } | RegistryFinding::LowDownloads { .. }))
     {
         return RiskLevel::Warning;
     }

@@ -182,3 +182,16 @@ fn test_flatmap_stream_no_install_scripts() {
         stdout
     );
 }
+
+#[test]
+fn test_deep_chain_malicious_with_deps() {
+    // Malicious preinstall script + real dependencies — offline mode only checks scripts
+    let (stdout, _, _) = run_supplygaurd("datasets/malicious/deep-chain/package.json");
+    assert!(
+        stdout.contains("SUSPICIOUS") || stdout.contains("BLOCK"),
+        "deep-chain should be flagged:\n{}",
+        stdout
+    );
+    assert!(stdout.contains("preinstall"));
+    assert!(stdout.contains("child_process") || stdout.contains("Execution"));
+}

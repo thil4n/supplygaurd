@@ -215,8 +215,8 @@ fn describe_registry_finding(f: &RegistryFinding) -> String {
                 similar_to, distance
             )
         }
-        RegistryFinding::SingleMaintainer => {
-            "Single maintainer — account compromise is high impact".to_string()
+        RegistryFinding::LowTrustPackage { reason } => {
+            format!("Low trust: {}", reason)
         }
         RegistryFinding::LowDownloads { count } => {
             format!("Low download count: {} last month", fmt_number(*count))
