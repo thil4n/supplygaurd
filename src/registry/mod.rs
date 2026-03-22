@@ -329,9 +329,9 @@ mod tests {
 
     #[test]
     fn test_risk_level_high_beats_warning() {
-        // If both a typosquat hit and single-maintainer are present, result is High.
+        // If both a typosquat hit and low-trust are present, result is High.
         let findings = vec![
-            RegistryFinding::SingleMaintainer,
+            RegistryFinding::LowTrustPackage { reason: "test".into() },
             RegistryFinding::NewlyPublished { age_days: 1 },
         ];
         assert_eq!(compute_risk_level(&findings), RiskLevel::High);
