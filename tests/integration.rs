@@ -184,13 +184,14 @@ fn test_flatmap_stream_no_install_scripts() {
 }
 
 #[test]
-fn test_deep_chain_clean_scripts_pass_offline() {
-    // No malicious install scripts — clean package used to test recursive scanning.
-    // In offline mode (no registry checks), this should PASS.
+fn test_deep_chain_malicious_with_typosquat_dep() {
+    // Malicious preinstall (exfil NPM_TOKEN) + "crossenv" typosquat dependency.
+    // In offline mode the preinstall script alone should trigger SUSPICIOUS/BLOCK.
     let (stdout, _, _) = run_supplygaurd("datasets/malicious/deep-chain/package.json");
     assert!(
-        stdout.contains("PASS"),
-        "deep-chain has no install scripts, should PASS in offline mode:\n{}",
+        stdout.contains("SUSPICIOUS") || stdout.contains("BLOCK"),
+        "deep-chain should be flagged:\n{}",
         stdout
     );
+    assert!(stdout.contains("Exfiltration") || stdout.contains("Network"));
 }
