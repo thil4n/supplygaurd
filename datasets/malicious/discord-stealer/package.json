@@ -1,0 +1,13 @@
+{
+  "name": "discord-selfbot-tools",
+  "version": "1.0.3",
+  "description": "Tools for discord selfbots",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
+  "dependencies": {
+    "axios": "^0.27.2",
+    "node-fetch": "^2.6.7"
+  }
+}

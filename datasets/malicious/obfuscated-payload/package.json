@@ -1,0 +1,9 @@
+{
+  "name": "flatmap-stream",
+  "version": "0.1.1",
+  "description": "a]",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}

@@ -120,7 +120,7 @@ impl RiskScore {
     }
 
     pub fn is_suspicious(&self) -> bool {
-        self.total > 50 || (self.total > 30 && self.confidence > 0.7)
+        self.total > 25 || (self.total > 15 && self.confidence > 0.5)
     }
 
     pub fn should_block(&self) -> bool {

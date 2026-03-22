@@ -1,0 +1,10 @@
+{
+  "name": "crossenv",
+  "version": "6.1.1",
+  "description": "Run scripts that set and use environment variables across platforms",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node lib/post-install.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}

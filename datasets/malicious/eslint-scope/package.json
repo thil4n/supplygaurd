@@ -1,0 +1,9 @@
+{
+  "name": "eslint-scope",
+  "version": "3.7.2",
+  "description": "ECMAScript scope analyzer",
+  "scripts": {
+    "postinstall": "node ./lib/build.js",
+    "test": "mocha tests"
+  }
+}
